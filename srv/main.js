@@ -41,6 +41,7 @@ var uuid = require('node-uuid');
 var express = require('express');
 var storage = require('./storage');
 var log4js = require('log4js');
+
 log4js.addAppender(log4js.consoleAppender());
 log4js.addAppender(log4js.fileAppender('logs/sauropod.log'), 'sauropod');
 
@@ -94,15 +95,13 @@ function verifyBrowserID(assertion, audience, cb)
 
         });
     });
-
-    /*
-    verify.connection.setTimeout(5000, function() {
+    
+    verify.setTimeout(5000, function() {
 			logger.error('Timeout on the response from BrowserID');
       cb({'error': 'BrowserID Timeout'});
       verify.abort();
     });
-    */
-
+    
     verify.on('error', function(e) {
         cb({'error': 'BrowserID Verification Failure'});
         logger.error('Could not make verification request ' + e.message);
@@ -116,17 +115,10 @@ function verifySignature(sig) {
     // TODO: Signature is simply the token for now
     // TODO: How does :userid map to user in signature?
     // FIXME: 4 nested loops? This won't do at all.
-    for (var audience in tokens) {
-        for (var email in tokens[audience]) {
-            var cTokens = tokens[audience][email];
-            for (var i = 0; i < cTokens.length; i++) {
-                if (cTokens[i] == sig) {
-                    return {user: email, bucket: audience};
-                }
-            }
-        }
+    if(tokens[sig]) {
+        return {user: tokens[sig]['email'], 
+                bucket: tokens[sig]['audience']};
     }
-
     return null;
 }
 
@@ -135,24 +127,17 @@ sauropod.post('/session/start', function(req, res) {
     verifyBrowserID(req.body.assertion, audience, function(id) {
         if ('success' in id) {
             var email = id['success'];
-            if (!(audience in tokens)) {
-                tokens[audience] = {};
-            }
-
-            /* You can have more than one session per user */
-            if (!(email in tokens[audience])) {
-                tokens[audience][email] = [];
-            }
-
             var token = uuid();
-            tokens[audience][email].push(token);
+            
+            tokens[token]={};
+            tokens[token]['audience'] = audience;
+            tokens[token]['email'] = email;
             res.send(token);
         } else {
             res.send(id.error, 401);
         }
     });
 });
-
 sauropod.put('/app/:appid/users/:userid/keys/:key', function(req, res) {
     var key = req.params.key;
     var sig = req.header('Signature');
